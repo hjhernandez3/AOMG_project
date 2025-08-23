@@ -7,3 +7,8 @@
 .RData
 .Rproj.user/
 renv/library/
+.DS_Store
+.Rhistory
+.RData
+.Rproj.user/
+renv/library/
