@@ -140,6 +140,9 @@ g <- graph_from_data_frame(
   directed = TRUE
 )
 
+# keep only vertices with degree > 0 (in OR out)
+g <- igraph::induced_subgraph(g, vids = igraph::V(g)[igraph::degree(g, mode = "all") > 0])
+
 set.seed(428)  
 p <- ggraph(g, layout = "fr") +   
   geom_edge_link(
@@ -153,22 +156,114 @@ p <- ggraph(g, layout = "fr") +
   scale_edge_width(range = c(0.3, 1.8), guide = "none") +
   scale_color_manual(
     values = c(
-      "Current AOMG Artist" = "hotpink",
-      "Prev. AOMG Artist"   = "lightblue"
+      "Current AOMG Artist" = "purple",
+      "Prev. AOMG Artist"   = "grey"
     )
   ) +
-  guides(size = "none", color = guide_legend(title = NULL)) +
+  guides(
+    color = guide_legend(title = NULL, override.aes = list(size = 6)), 
+    size = "none", 
+    edge_alpha = "none"
+  )+
   labs(
     title = "AOMG Music Artist Network",
     subtitle = "Directed graph of song collaborations within AOMG: arrows point to featured artists.\nNode size represents total songs released; color indicates genre.",
     caption = "Graph by Hortencia Josefina Hernandez·\nData: AOMG artist discography"
   ) +
+  scale_size_area(max_size = 18, limits = c(0, max(igraph::V(g)$songs_main, na.rm = TRUE)),
+                  guide = "none") +
   theme_void() +
   theme(
     legend.position  = "right",
-    panel.background = element_rect(fill = "transparent", colour = NA),
-    plot.background  = element_rect(fill = "transparent",  colour = NA)
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 13, face = "bold"),
+    legend.key.size = unit(1.2, "cm") 
+    #panel.background = element_rect(fill = "transparent", colour = NA),
+    #plot.background  = element_rect(fill = "transparent",  colour = NA)
   )
 
 
-ggsave("images/AOMG_graph.png", p, width = 12, height = 8, dpi = 300, bg = "transparent")
+ggsave("images/AOMG_graph.png", p, width = 12, height = 8, dpi = 300)
+
+
+#----Collab Proportion----
+
+collab_summary <- dat %>%
+  mutate(across(c(Artist, Feat), as.character)) %>%
+  filter(!is.na(Artist), !is.na(Feat)) %>%
+  separate_rows(Artist, Feat, sep = ",\\s*") %>%
+  mutate(
+    Artist = str_trim(Artist),
+    Feat   = str_trim(Feat)
+  ) %>%
+  filter(Artist != "", Feat != "") %>%
+  # keep only AOMG main artists pointing to their featured artists
+  filter(Artist %in% all_aomg) %>%
+  distinct(Artist, Feat) %>%                 # <-- unique collaborators per artist
+  group_by(Artist) %>%
+  summarise(
+    n_collab_total = n_distinct(Feat),
+    n_collab_aomg  = n_distinct(Feat[Feat %in% all_aomg]),
+    n_collab_non   = n_collab_total - n_collab_aomg,
+    prop_aomg      = if_else(n_collab_total > 0, n_collab_aomg / n_collab_total, NA_real_),
+    prop_non       = 1 - prop_aomg,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_collab_total))
+
+collab_summary
+
+plot_props <- collab_summary %>%
+  tidyr::pivot_longer(c(n_collab_aomg, n_collab_non),
+                      names_to = "type", values_to = "n") %>%
+  mutate(type = dplyr::recode(type,
+                              n_collab_aomg = "AOMG collaborators",
+                              n_collab_non  = "Non-AOMG collaborators"))
+
+p2 <- ggplot(plot_props,
+       aes(x = reorder(Artist, n_collab_total), 
+           y = n, fill = type)) +
+    geom_col(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(
+    values = c("AOMG collaborators" = "purple",
+               "Non-AOMG collaborators" = "lightgray"),
+    breaks = c("AOMG collaborators", "Non-AOMG collaborators"),
+    guide = guide_legend(title = NULL)
+  ) +
+  labs(x = "",y = "Percentage of collaborators") +
+  coord_flip() +
+  theme_minimal() +
+  theme(axis.text.y = element_text(face = "bold"))
+
+ggsave("images/AOMG_collab_percent.png", p2, width = 9, height = 8, dpi = 300)
+
+#----IN/OUT-DEG----
+
+g_all <- graph_from_data_frame(
+  d = edges_aomg,                                    
+  vertices = nodes_aomg %>% dplyr::rename(name = id),
+  directed = TRUE
+)
+
+# Degrees (counts of unique edges), per artist
+in_deg  <- igraph::degree(g_all, mode = "in")
+out_deg <- igraph::degree(g_all, mode = "out")
+
+
+# Assemble table
+degree_table <- tibble::tibble(
+  Artist      = names(out_deg),
+  in_degree   = as.integer(in_deg),
+  out_degree  = as.integer(out_deg),
+  total_songs = in_degree + out_degree,
+) %>%
+  left_join(nodes_aomg %>% select(id, group, songs_main), by = c("Artist" = "id")) %>%
+  mutate(
+    songs_main = tidyr::replace_na(songs_main, 0L)
+  ) %>%
+  # order however you like; here: most outgoing, then incoming
+  arrange(desc(out_degree), desc(in_degree), desc(total_songs))
+
+degree_table
+
