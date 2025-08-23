@@ -170,7 +170,6 @@ p <- ggraph(g, layout = "fr") +
     plot.background  = element_rect(fill = "transparent",  colour = NA)
   )
 
-
-
+kkk
 
 ggsave("images/AOMG_graph.png", p, width = 12, height = 8, dpi = 300, bg = "transparent")
