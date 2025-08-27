@@ -99,7 +99,7 @@ graph <- visNetwork(nodes, edges, width = "100%", height = "900px") %>%
 
 
 
-saveWidget(graph, file = "docs/index.html", selfcontained = TRUE)
+#saveWidget(graph, file = "docs/index.html", selfcontained = TRUE)
 
 # stagnate graph highlighting the AOMG network with a focus on the current ones
 songs_per_artist_main <- dat %>%
@@ -183,7 +183,7 @@ p <- ggraph(g, layout = "fr") +
   )
 
 
-ggsave("images/AOMG_graph.png", p, width = 12, height = 8, dpi = 300)
+#ggsave("images/AOMG_graph.png", p, width = 12, height = 8, dpi = 300)
 
 
 #----Collab Proportion----
@@ -236,7 +236,7 @@ p2 <- ggplot(plot_props,
   theme_minimal() +
   theme(axis.text.y = element_text(face = "bold"))
 
-ggsave("images/AOMG_collab_percent.png", p2, width = 9, height = 8, dpi = 300)
+#ggsave("images/AOMG_collab_percent.png", p2, width = 9, height = 8, dpi = 300)
 
 #----IN/OUT-DEG----
 
@@ -251,19 +251,21 @@ in_deg  <- igraph::degree(g_all, mode = "in")
 out_deg <- igraph::degree(g_all, mode = "out")
 
 
-# Assemble table
-degree_table <- tibble::tibble(
-  Artist      = names(out_deg),
-  in_degree   = as.integer(in_deg),
-  out_degree  = as.integer(out_deg),
-  total_songs = in_degree + out_degree,
+songs_tbl <- songs_per_artist_main %>%
+  rename(Artist = Artist, discography_total = songs_main)
+
+degree_table <- tibble(
+  Artist     = names(out_deg),
+  in_degree  = as.integer(in_deg[Artist]),
+  out_degree = as.integer(out_deg[Artist])
 ) %>%
-  left_join(nodes_aomg %>% select(id, group, songs_main), by = c("Artist" = "id")) %>%
+  inner_join(tibble(Artist = current_artist), by = "Artist") %>%
+  left_join(nodes_aomg %>% select(Artist = id, group), by = "Artist") %>%
+  left_join(songs_tbl, by = "Artist") %>%
   mutate(
-    songs_main = tidyr::replace_na(songs_main, 0L)
+    discography_total = replace_na(discography_total, 0L)
   ) %>%
-  # order however you like; here: most outgoing, then incoming
-  arrange(desc(out_degree), desc(in_degree), desc(total_songs))
+  arrange(desc(discography_total),desc(out_degree), desc(in_degree))
 
 degree_table
 
