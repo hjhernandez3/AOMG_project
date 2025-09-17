@@ -211,7 +211,7 @@ collab_summary <- dat %>%
   ) %>%
   arrange(desc(n_collab_total))
 
-collab_summary
+#collab_summary
 
 plot_props <- collab_summary %>%
   tidyr::pivot_longer(c(n_collab_aomg, n_collab_non),
@@ -267,5 +267,71 @@ degree_table <- tibble(
   ) %>%
   arrange(desc(discography_total),desc(out_degree), desc(in_degree))
 
-degree_table
+#degree_table
+
+
+# --- Centralities (AOMG-only subgraph) ---
+# stronger tie = shorter distance
+btw  <- igraph::betweenness(g_all, directed = TRUE, weights = E(g_all)$dist, normalized = TRUE)
+
+# Closeness has direction choices:
+clo_out <- igraph::closeness(g_all, mode = "out", weights = E(g_all)$dist, normalized = TRUE) 
+clo_in  <- igraph::closeness(g_all, mode = "in",  weights = E(g_all)$dist, normalized = TRUE)  
+
+
+
+
+cent_tbl <- tibble::tibble(
+  Artist        = igraph::V(g_all)$name,
+  betweenness   = as.numeric(btw),
+  closeness_out = as.numeric(clo_out), # how easily a node reaches others
+  closeness_in  = as.numeric(clo_in) # how easily others reach a node
+)
+
+cent_tbl %>%
+  arrange(desc(betweenness),desc(closeness_out), desc(closeness_in)) %>%
+  filter(Artist %in% current_artist)
+
+
+# --- FULL graph: use ALL artists and ALL collabs ---
+edges_full <- dat %>%
+  filter(!is.na(Artist), !is.na(Feat)) %>%
+  separate_rows(Artist, Feat, sep = ",\\s*") %>%
+  mutate(Artist = trimws(Artist), Feat = trimws(Feat)) %>%
+  filter(Artist != "", Feat != "") %>%
+  count(from = Artist, to = Feat, name = "weight") %>%
+  mutate(arrows = "to")
+
+nodes_full <- tibble::tibble(
+  id = all_artists1,
+  label = all_artists1
+) %>%
+  mutate(
+    group = dplyr::case_when(
+      id %in% current_artist ~ "Current AOMG Artist",
+      id %in% prev_aomg      ~ "Prev. AOMG Artist",
+      TRUE                   ~ "Non AOMG Artist"
+    )
+  )
+
+g_full <- graph_from_data_frame(
+  d = edges_full,
+  vertices = nodes_full %>% dplyr::rename(name = id),
+  directed = TRUE
+)
+
+btw_full  <- igraph::betweenness(g_full, directed = TRUE, weights = E(g_full)$dist, normalized = TRUE)
+clo_out_f <- igraph::closeness(g_full, mode = "out", weights = E(g_full)$dist, normalized = TRUE)
+clo_in_f  <- igraph::closeness(g_full, mode = "in",  weights = E(g_full)$dist, normalized = TRUE)
+
+cent_tbl_full <- tibble::tibble(
+  Artist        = igraph::V(g_full)$name,
+  betweenness   = as.numeric(btw_full),
+  closeness_out = as.numeric(clo_out_f),
+  closeness_in  = as.numeric(clo_in_f)
+)
+
+cent_tbl_full %>%
+  arrange(desc(betweenness),desc(closeness_out), desc(closeness_in))
+
 
